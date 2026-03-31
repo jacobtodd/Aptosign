@@ -375,10 +375,16 @@
       const connectFeat = petraWallet.features['aptos:connect'];
       if (!connectFeat) throw new Error('Wallet missing aptos:connect feature');
 
-      await connectFeat.connect();
+      const resp = await connectFeat.connect();
 
-      // Accounts are available on the wallet object after connect
-      const account = petraWallet.accounts && petraWallet.accounts[0];
+      // AIP-62: connect returns UserResponse<{ account, network }>
+      // { status: 'approved', args: { account, network } } | { status: 'rejected' }
+      if (resp && resp.status === 'rejected') {
+        throw new Error('Connection rejected by user');
+      }
+
+      // Pull account from response args, or fall back to wallet.accounts[]
+      const account = resp?.args?.account ?? petraWallet.accounts?.[0];
       if (!account) throw new Error('No account returned after connect');
 
       const addr   = toHexString(account.address);
