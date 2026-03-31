@@ -225,8 +225,30 @@
 
 <div class="toast" id="toast"></div>
 
+<script>
+  // Disable connect button synchronously so it can't be clicked before the
+  // ES module finishes loading (modules load async; without this there's a
+  // window where the button has no handler attached).
+  document.getElementById('connectBtn').textContent = 'Loading…';
+  document.getElementById('connectBtn').disabled = true;
+</script>
+
 <script type="module">
-  import { getAptosWallets } from 'https://esm.sh/@aptos-labs/wallet-standard@1.0.0';
+  // ── Import (top-level await) ───────────────────────────────────────────────
+  let getAptosWallets;
+  try {
+    ({ getAptosWallets } = await import(
+      'https://cdn.jsdelivr.net/npm/@aptos-labs/wallet-standard@1.0.0/+esm'
+    ));
+  } catch (err) {
+    console.error('[Aptosign] wallet-standard failed to load:', err);
+    document.getElementById('walletLabel').textContent =
+      'Failed to load wallet library — check your connection and reload';
+    document.getElementById('connectBtn').textContent = 'Reload page';
+    document.getElementById('connectBtn').disabled = false;
+    document.getElementById('connectBtn').addEventListener('click', () => location.reload());
+    throw err; // stop module execution
+  }
 
   // ── State ──────────────────────────────────────────────────────────────────
   let petraWallet   = null;
@@ -304,10 +326,12 @@
     const { aptosWallets, on } = getAptosWallets();
     petraWallet = findPetra(aptosWallets);
 
-    // Listen for wallets that register after page load
-    on('register', (newWallet) => {
-      if (!petraWallet && newWallet.name === 'Petra') {
-        petraWallet = newWallet;
+    // Wallet standard passes newly registered wallets as rest arguments
+    on('register', (...newWallets) => {
+      for (const w of newWallets) {
+        if (!petraWallet && w.name === 'Petra') {
+          petraWallet = w;
+        }
       }
     });
   }
@@ -525,6 +549,11 @@
 
   // ── Init ───────────────────────────────────────────────────────────────────
   initWallets();
+
+  // Re-enable the connect button now that the library and event listeners
+  // are fully set up.
+  document.getElementById('connectBtn').textContent = 'Connect Petra';
+  document.getElementById('connectBtn').disabled = false;
 </script>
 </body>
 </html>
