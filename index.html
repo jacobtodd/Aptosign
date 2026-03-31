@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aptosign — Sign & Verify with Petra</title>
+  <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d0f14;
+      --surface: #161b26;
+      --surface2: #1e2535;
+      --border: #2a3147;
+      --accent: #00c2a8;
+      --accent-hover: #00dfc2;
+      --accent-dim: rgba(0, 194, 168, 0.12);
+      --text: #e8eaf0;
+      --text-muted: #7a8499;
+      --success: #22c55e;
+      --success-dim: rgba(34, 197, 94, 0.12);
+      --error: #ef4444;
+      --error-dim: rgba(239, 68, 68, 0.12);
+      --warning: #f59e0b;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { color: var(--accent-hover); }
+
+    /* ── Layout ── */
+    .app {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 0 2rem;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.2rem;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent), #7c3aed);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .logo span { color: var(--accent); }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3rem 1.5rem;
+      gap: 2rem;
+    }
+
+    /* ── Wallet bar ── */
+    .wallet-bar {
+      width: 100%;
+      max-width: 680px;
+    }
+
+    .wallet-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .wallet-info { display: flex; align-items: center; gap: 0.75rem; }
+
+    .wallet-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .wallet-dot.connected { background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+    .wallet-label { font-size: 0.85rem; color: var(--text-muted); }
+    .wallet-address {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.85rem;
+      color: var(--accent);
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0.6rem 1.25rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #0d0f14;
+    }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+    }
+    .btn-outline:hover:not(:disabled) { background: var(--accent-dim); }
+
+    .btn-ghost {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--error);
+      border: 1px solid var(--error);
+    }
+    .btn-danger:hover:not(:disabled) { background: var(--error-dim); }
+
+    /* ── Tabs ── */
+    .tabs-container {
+      width: 100%;
+      max-width: 680px;
+    }
+
+    .tabs {
+      display: flex;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 0.85rem 1rem;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+      border-bottom: 2px solid transparent;
+    }
+    .tab-btn:hover { color: var(--text); background: var(--surface2); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--accent-dim);
+    }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Cards ── */
+    .card {
+      width: 100%;
+      max-width: 680px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* ── Form elements ── */
+    .field { margin-bottom: 1.1rem; }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.4rem;
+    }
+
+    textarea, input[type="text"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-size: 0.9rem;
+      padding: 0.7rem 0.9rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+      resize: vertical;
+    }
+    textarea:focus, input[type="text"]:focus { border-color: var(--accent); }
+    textarea { min-height: 80px; }
+
+    .mono {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.8rem;
+      word-break: break-all;
+    }
+
+    /* ── Result box ── */
+    .result {
+      margin-top: 1.25rem;
+      border-radius: var(--radius-sm);
+      padding: 1rem 1.1rem;
+      border: 1px solid;
+      display: none;
+      animation: fadeIn 0.2s ease;
+    }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .result.success { background: var(--success-dim); border-color: var(--success); }
+    .result.error   { background: var(--error-dim);   border-color: var(--error);   }
+    .result.info    { background: var(--accent-dim);  border-color: var(--accent);  }
+
+    .result-header {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .result.success .result-header { color: var(--success); }
+    .result.error   .result-header { color: var(--error); }
+    .result.info    .result-header { color: var(--accent); }
+
+    .result-row {
+      margin-bottom: 0.5rem;
+    }
+    .result-row:last-child { margin-bottom: 0; }
+    .result-key {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+    }
+    .result-val {
+      font-family: 'SFMono-Regular', Consolas, monospace;
+      font-size: 0.78rem;
+      word-break: break-all;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .result-val:hover { color: var(--accent); }
+
+    /* ── Copy toast ── */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.65rem 1.1rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      font-weight: 500;
+      z-index: 100;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all 0.2s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: none; }
+
+    /* ── Divider ── */
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 1.25rem 0;
+    }
+
+    /* ── Warning banner ── */
+    .banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      background: rgba(245,158,11,0.08);
+      border: 1px solid rgba(245,158,11,0.3);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 0.9rem;
+      font-size: 0.82rem;
+      color: var(--warning);
+      margin-bottom: 1.1rem;
+    }
+
+    .not-installed {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+    }
+    .not-installed a { color: var(--accent); }
+
+    /* ── Spinner ── */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(13,15,20,0.4);
+      border-top-color: #0d0f14;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    footer {
+      text-align: center;
+      padding: 1.5rem;
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 480px) {
+      header { padding: 0 1rem; }
+      main { padding: 1.5rem 1rem; }
+      .card { padding: 1.25rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">&#9998;</div>
+      Apto<span>sign</span>
+    </div>
+    <div style="font-size:0.78rem;color:var(--text-muted);">Aptos Message Signing</div>
+  </header>
+
+  <main>
+
+    <!-- Wallet Connection -->
+    <div class="wallet-bar">
+      <div class="wallet-card">
+        <div class="wallet-info">
+          <div class="wallet-dot" id="walletDot"></div>
+          <div>
+            <div class="wallet-label" id="walletLabel">Not connected</div>
+            <div class="wallet-address" id="walletAddress"></div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.5rem;">
+          <button class="btn btn-primary" id="connectBtn" onclick="connectWallet()">Connect Petra</button>
+          <button class="btn btn-danger" id="disconnectBtn" onclick="disconnectWallet()" style="display:none;">Disconnect</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs-container">
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('sign', this)">&#9998; Sign Message</button>
+        <button class="tab-btn" onclick="switchTab('verify', this)">&#10003; Verify Message</button>
+      </div>
+    </div>
+
+    <!-- Sign Panel -->
+    <div class="card tab-panel active" id="panel-sign">
+      <div class="card-title">&#9998; Sign a Message</div>
+
+      <div class="banner">
+        &#9888; Only sign messages you understand. Signing does not authorize transactions.
+      </div>
+
+      <div class="field">
+        <label for="signMessage">Message</label>
+        <textarea id="signMessage" placeholder="Enter the message you want to sign..."></textarea>
+      </div>
+
+      <div class="field">
+        <label for="signNonce">Nonce <span style="text-transform:none;font-weight:400;">(optional — auto-generated if blank)</span></label>
+        <input type="text" id="signNonce" placeholder="Leave blank for auto-generated nonce" />
+      </div>
+
+      <button class="btn btn-primary" id="signBtn" onclick="signMessage()" disabled style="width:100%;">
+        Connect wallet to sign
+      </button>
+
+      <div class="result" id="signResult">
+        <div class="result-header" id="signResultHeader"></div>
+        <div id="signResultBody"></div>
+      </div>
+    </div>
+
+    <!-- Verify Panel -->
+    <div class="card tab-panel" id="panel-verify">
+      <div class="card-title">&#10003; Verify a Signature</div>
+
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:1.25rem;">
+        Verify that a message was signed by a specific Aptos address using the output from the Sign tab.
+        All fields are required.
+      </p>
+
+      <div class="field">
+        <label for="verifyFullMessage">Full Signed Message</label>
+        <textarea id="verifyFullMessage" placeholder="Paste the fullMessage value from the sign result..." style="min-height:100px;"></textarea>
+      </div>
+
+      <div class="field">
+        <label for="verifySignature">Signature (hex)</label>
+        <input type="text" id="verifySignature" class="mono" placeholder="0x..." />
+      </div>
+
+      <div class="field">
+        <label for="verifyPublicKey">Public Key (hex)</label>
+        <input type="text" id="verifyPublicKey" class="mono" placeholder="0x..." />
+      </div>
+
+      <hr class="divider" />
+
+      <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:1rem;">
+        Need to also confirm the signer address? Enter it below (optional).
+      </div>
+
+      <div class="field">
+        <label for="verifyAddress">Expected Address (optional)</label>
+        <input type="text" id="verifyAddress" class="mono" placeholder="0x..." />
+      </div>
+
+      <button class="btn btn-primary" onclick="verifyMessage()" style="width:100%;">Verify Signature</button>
+
+      <div class="result" id="verifyResult">
+        <div class="result-header" id="verifyResultHeader"></div>
+        <div id="verifyResultBody"></div>
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <div class="card" style="max-width:680px;">
+      <div class="card-title">&#8505; How it works</div>
+      <div style="font-size:0.85rem;color:var(--text-muted);line-height:1.8;">
+        <strong style="color:var(--text);">Signing</strong> — Petra wallet signs your message using your private key via Ed25519.
+        The wallet prefixes the message with <code style="color:var(--accent);">APTOS\nmessage: ...\nnonce: ...</code> before signing,
+        producing a deterministic <em>fullMessage</em> and <em>signature</em>.<br/><br/>
+        <strong style="color:var(--text);">Verification</strong> — The Ed25519 signature is verified client-side using TweetNaCl.
+        No data leaves your browser. The <em>fullMessage</em> + <em>publicKey</em> + <em>signature</em> are all you need to
+        cryptographically prove ownership of an Aptos address.
+      </div>
+    </div>
+
+  </main>
+
+  <footer>
+    Aptosign &mdash; client-side only &middot; no data sent to any server &middot;
+    <a href="https://petra.app" target="_blank" rel="noopener">Petra Wallet</a>
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let connectedAddress = null;
+  let connectedPublicKey = null;
+
+  // ── Utilities ──────────────────────────────────────────────────────────────
+  function hexToBytes(hex) {
+    const clean = hex.startsWith('0x') ? hex.slice(2) : hex;
+    const bytes = new Uint8Array(clean.length / 2);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+    }
+    return bytes;
+  }
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  function copyText(text) {
+    navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard'));
+  }
+
+  function shortAddr(addr) {
+    if (!addr) return '';
+    return addr.slice(0, 6) + '...' + addr.slice(-4);
+  }
+
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  function switchTab(name, btn) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + name).classList.add('active');
+  }
+
+  // ── Wallet connection ──────────────────────────────────────────────────────
+  async function connectWallet() {
+    if (!window.aptos) {
+      showNotInstalled();
+      return;
+    }
+    const btn = document.getElementById('connectBtn');
+    btn.innerHTML = '<span class="spinner"></span> Connecting…';
+    btn.disabled = true;
+    try {
+      const response = await window.aptos.connect();
+      connectedAddress = response.address;
+      // Fetch public key
+      const account = await window.aptos.account();
+      connectedPublicKey = account.publicKey;
+      updateWalletUI(true);
+    } catch (err) {
+      btn.textContent = 'Connect Petra';
+      btn.disabled = false;
+      showResult('signResult', 'error', '&#10007; Connection failed', [
+        { key: 'Error', val: err.message || 'User rejected the request' }
+      ]);
+    }
+  }
+
+  async function disconnectWallet() {
+    if (window.aptos) {
+      try { await window.aptos.disconnect(); } catch (_) {}
+    }
+    connectedAddress = null;
+    connectedPublicKey = null;
+    updateWalletUI(false);
+  }
+
+  function updateWalletUI(connected) {
+    const dot       = document.getElementById('walletDot');
+    const label     = document.getElementById('walletLabel');
+    const address   = document.getElementById('walletAddress');
+    const connectBtn    = document.getElementById('connectBtn');
+    const disconnectBtn = document.getElementById('disconnectBtn');
+    const signBtn       = document.getElementById('signBtn');
+
+    if (connected) {
+      dot.classList.add('connected');
+      label.textContent = 'Petra Wallet connected';
+      address.textContent = shortAddr(connectedAddress);
+      address.title = connectedAddress;
+      connectBtn.style.display = 'none';
+      disconnectBtn.style.display = '';
+      signBtn.disabled = false;
+      signBtn.textContent = 'Sign Message';
+    } else {
+      dot.classList.remove('connected');
+      label.textContent = 'Not connected';
+      address.textContent = '';
+      connectBtn.style.display = '';
+      connectBtn.disabled = false;
+      connectBtn.textContent = 'Connect Petra';
+      disconnectBtn.style.display = 'none';
+      signBtn.disabled = true;
+      signBtn.textContent = 'Connect wallet to sign';
+    }
+  }
+
+  function showNotInstalled() {
+    showResult('signResult', 'error', '&#9888; Petra not detected', [
+      { key: 'Action', val: 'Install the Petra Wallet browser extension and reload this page.' }
+    ]);
+  }
+
+  // ── Check if already connected on load ────────────────────────────────────
+  window.addEventListener('load', async () => {
+    if (window.aptos) {
+      try {
+        const isConnected = await window.aptos.isConnected();
+        if (isConnected) {
+          const response = await window.aptos.account();
+          connectedAddress = response.address;
+          connectedPublicKey = response.publicKey;
+          updateWalletUI(true);
+        }
+      } catch (_) {}
+    }
+  });
+
+  // ── Sign message ───────────────────────────────────────────────────────────
+  async function signMessage() {
+    if (!window.aptos || !connectedAddress) return;
+
+    const msgVal   = document.getElementById('signMessage').value.trim();
+    const nonceVal = document.getElementById('signNonce').value.trim() || Date.now().toString();
+    const signBtn  = document.getElementById('signBtn');
+
+    if (!msgVal) {
+      showResult('signResult', 'error', '&#10007; Missing input', [
+        { key: 'Error', val: 'Please enter a message to sign.' }
+      ]);
+      return;
+    }
+
+    signBtn.innerHTML = '<span class="spinner"></span> Waiting for Petra…';
+    signBtn.disabled = true;
+
+    try {
+      const response = await window.aptos.signMessage({
+        message: msgVal,
+        nonce: nonceVal,
+      });
+
+      // Normalise — different Petra versions may return slightly different shapes
+      const signature   = response.signature;
+      const fullMessage = response.fullMessage;
+      const prefix      = response.prefix || 'APTOS';
+      const address     = response.address || connectedAddress;
+      const publicKey   = response.publicKey || connectedPublicKey;
+
+      // Auto-fill verify tab for convenience
+      document.getElementById('verifyFullMessage').value = fullMessage;
+      document.getElementById('verifySignature').value   = signature;
+      document.getElementById('verifyPublicKey').value   = publicKey;
+      document.getElementById('verifyAddress').value     = address;
+
+      showResult('signResult', 'success', '&#10003; Message signed', [
+        { key: 'Address',      val: address },
+        { key: 'Public Key',   val: publicKey },
+        { key: 'Nonce',        val: nonceVal },
+        { key: 'Full Message', val: fullMessage },
+        { key: 'Signature',    val: signature },
+      ]);
+
+    } catch (err) {
+      showResult('signResult', 'error', '&#10007; Signing failed', [
+        { key: 'Error', val: err.message || 'User rejected the signing request.' }
+      ]);
+    } finally {
+      signBtn.disabled = false;
+      signBtn.textContent = 'Sign Message';
+    }
+  }
+
+  // ── Verify message ─────────────────────────────────────────────────────────
+  function verifyMessage() {
+    const fullMessage = document.getElementById('verifyFullMessage').value.trim();
+    const signatureHex = document.getElementById('verifySignature').value.trim();
+    const publicKeyHex = document.getElementById('verifyPublicKey').value.trim();
+    const expectedAddr = document.getElementById('verifyAddress').value.trim();
+
+    if (!fullMessage || !signatureHex || !publicKeyHex) {
+      showResult('verifyResult', 'error', '&#10007; Missing fields', [
+        { key: 'Error', val: 'Full Message, Signature, and Public Key are all required.' }
+      ]);
+      return;
+    }
+
+    try {
+      const msgBytes = new TextEncoder().encode(fullMessage);
+      const sigBytes = hexToBytes(signatureHex);
+      const pubBytes = hexToBytes(publicKeyHex);
+
+      // Ed25519 signature verification via TweetNaCl
+      const valid = nacl.sign.detached.verify(msgBytes, sigBytes, pubBytes);
+
+      if (!valid) {
+        showResult('verifyResult', 'error', '&#10007; Invalid signature', [
+          { key: 'Result', val: 'The signature does NOT match the provided message and public key.' }
+        ]);
+        return;
+      }
+
+      // Optional address check
+      const rows = [
+        { key: 'Signature', val: 'Valid Ed25519 signature ✓' },
+        { key: 'Public Key', val: publicKeyHex },
+      ];
+
+      if (expectedAddr) {
+        // Aptos address is the last 32 bytes of SHA3-256(public_key || 0x00)
+        // For single-key accounts the address can be derived, but Petra also returns
+        // it directly. We do a simple string comparison here.
+        const normExpected = expectedAddr.toLowerCase().replace(/^0x/, '');
+        // We can't derive without SHA3; instead flag if they want cross-check
+        rows.push({
+          key: 'Address check',
+          val: '⚠ Address derivation requires SHA3-256. Cross-check the address independently or use the address returned from the sign step.'
+        });
+      }
+
+      showResult('verifyResult', 'success', '&#10003; Signature verified', rows);
+
+    } catch (err) {
+      showResult('verifyResult', 'error', '&#10007; Verification error', [
+        { key: 'Error', val: err.message || 'Could not verify — check that all fields are correct hex values.' }
+      ]);
+    }
+  }
+
+  // ── Result renderer ────────────────────────────────────────────────────────
+  function showResult(id, type, header, rows) {
+    const box     = document.getElementById(id);
+    const hdr     = document.getElementById(id + 'Header');
+    const body    = document.getElementById(id + 'Body');
+
+    box.className = 'result ' + type;
+    hdr.innerHTML = header;
+    body.innerHTML = rows.map(r => `
+      <div class="result-row">
+        <div class="result-key">${r.key}</div>
+        <div class="result-val mono" title="Click to copy" onclick="copyText('${escHtml(r.val)}')">${escHtml(r.val)}</div>
+      </div>
+    `).join('');
+    box.style.display = 'block';
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+</script>
+</body>
+</html>
