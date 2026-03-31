@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Aptosign — Sign & Verify with Petra</title>
   <script src="https://cdn.jsdelivr.net/npm/tweetnacl@1.0.3/nacl-fast.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/js-sha3@0.9.3/build/sha3.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -499,9 +500,17 @@
         return;
       }
 
+      // Derive Aptos address: SHA3-256(public_key_bytes || 0x00)
+      // 0x00 = Ed25519 single-key scheme byte
+      const addrInput = new Uint8Array(pubBytes.length + 1);
+      addrInput.set(pubBytes);
+      addrInput[pubBytes.length] = 0x00;
+      const derivedAddress = '0x' + sha3_256(addrInput);
+
       showResult('verifyResult', 'success', '&#10003; Signature verified', [
-        { key: 'Result',     val: 'Valid Ed25519 signature — signed by the owner of this public key.' },
-        { key: 'Public Key', val: pubHex },
+        { key: 'Result',          val: 'Valid Ed25519 signature ✓' },
+        { key: 'Signer Address',  val: derivedAddress },
+        { key: 'Public Key',      val: pubHex },
       ]);
     } catch (err) {
       showResult('verifyResult', 'error', '&#10007; Verification error', [{
