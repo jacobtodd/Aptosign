@@ -438,10 +438,15 @@
 
       const resp = await signFeat.signMessage({ message: msgVal, nonce: nonceVal });
 
-      const signature   = toHexString(resp.signature);
-      const fullMessage = resp.fullMessage;
-      const address     = resp.address ? toHexString(resp.address) : connectedAddr;
-      const publicKey   = resp.publicKey ? toHexString(resp.publicKey) : connectedPubKey;
+      // AIP-62: signMessage returns UserResponse<AptosSignMessageOutput>
+      // { status: 'approved', args: { fullMessage, signature, ... } } | { status: 'rejected' }
+      if (resp && resp.status === 'rejected') throw new Error('Signing rejected by user');
+
+      const output      = resp?.args ?? resp; // fall back to resp directly for older wallets
+      const signature   = toHexString(output.signature);
+      const fullMessage = output.fullMessage;
+      const address     = output.address ? toHexString(output.address) : connectedAddr;
+      const publicKey   = output.publicKey ? toHexString(output.publicKey) : connectedPubKey;
 
       document.getElementById('verifyFullMessage').value = fullMessage;
       document.getElementById('verifySignature').value   = signature;
