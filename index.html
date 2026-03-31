@@ -313,14 +313,16 @@
     }
   }
 
-  // Listen for wallets that load after this script
-  window.addEventListener('wallet-standard:register-wallet', ({ detail }) => {
-    if (detail && typeof detail.register === 'function') {
-      detail.register(considerWallet);
+  // Listen for wallets that load after this script.
+  // Per wallet-standard spec: detail IS the callback fn; call it with { register }
+  window.addEventListener('wallet-standard:register-wallet', ({ detail: callback }) => {
+    if (typeof callback === 'function') {
+      callback({ register: considerWallet });
     }
   });
 
-  // Trigger wallets already present on the page
+  // Trigger wallets already present on the page.
+  // Petra listens for this and calls detail.register(wallet)
   window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', {
     bubbles: false, cancelable: false, composed: false,
     detail: { register: considerWallet }
