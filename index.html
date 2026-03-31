@@ -226,33 +226,14 @@
 <div class="toast" id="toast"></div>
 
 <script>
-  // Disable connect button synchronously so it can't be clicked before the
-  // ES module finishes loading (modules load async; without this there's a
-  // window where the button has no handler attached).
-  document.getElementById('connectBtn').textContent = 'Loading…';
-  document.getElementById('connectBtn').disabled = true;
-</script>
-
-<script type="module">
-  // ── Import (top-level await) ───────────────────────────────────────────────
-  let getAptosWallets;
-  try {
-    ({ getAptosWallets } = await import(
-      'https://cdn.jsdelivr.net/npm/@aptos-labs/wallet-standard@1.0.0/+esm'
-    ));
-  } catch (err) {
-    console.error('[Aptosign] wallet-standard failed to load:', err);
-    document.getElementById('walletLabel').textContent =
-      'Failed to load wallet library — check your connection and reload';
-    document.getElementById('connectBtn').textContent = 'Reload page';
-    document.getElementById('connectBtn').disabled = false;
-    document.getElementById('connectBtn').addEventListener('click', () => location.reload());
-    throw err; // stop module execution
-  }
+  // ─────────────────────────────────────────────────────────────────────────
+  // Plain <script> — no ES modules, no CDN imports, no external dependencies.
+  // Wallet discovery uses the AIP-62 / wallet-standard event protocol directly.
+  // ─────────────────────────────────────────────────────────────────────────
 
   // ── State ──────────────────────────────────────────────────────────────────
-  let petraWallet   = null;
-  let connectedAddr = null;
+  let petraWallet     = null;
+  let connectedAddr   = null;
   let connectedPubKey = null;
 
   // ── Helpers ────────────────────────────────────────────────────────────────
@@ -260,19 +241,21 @@
     if (hex instanceof Uint8Array) return hex;
     const clean = String(hex).replace(/^0x/, '');
     const bytes = new Uint8Array(clean.length / 2);
-    for (let i = 0; i < bytes.length; i++) {
+    for (let i = 0; i < bytes.length; i++)
       bytes[i] = parseInt(clean.slice(i * 2, i * 2 + 2), 16);
-    }
     return bytes;
   }
 
-  function bytesToHex(bytes) {
-    return '0x' + Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
-  }
-
   function toHexString(val) {
+    if (!val) return '';
     if (typeof val === 'string') return val.startsWith('0x') ? val : '0x' + val;
-    if (val instanceof Uint8Array) return bytesToHex(val);
+    if (val instanceof Uint8Array)
+      return '0x' + Array.from(val).map(b => b.toString(16).padStart(2, '0')).join('');
+    // AptosPublicKey / AptosSignature objects expose .toString() or .hex()
+    if (typeof val.toString === 'function') {
+      const s = val.toString();
+      return s.startsWith('0x') ? s : '0x' + s;
+    }
     return String(val);
   }
 
@@ -311,106 +294,99 @@
         <div class="result-val" data-copy="${escHtml(r.val)}">${escHtml(r.val)}</div>
       </div>`).join('');
     box.style.display = 'block';
-    // Attach copy listeners
-    box.querySelectorAll('.result-val').forEach(el => {
-      el.addEventListener('click', () => copyText(el.dataset.copy));
-    });
+    box.querySelectorAll('.result-val').forEach(el =>
+      el.addEventListener('click', () => copyText(el.dataset.copy))
+    );
   }
 
-  // ── Wallet discovery ───────────────────────────────────────────────────────
-  function findPetra(wallets) {
-    return wallets.find(w => w.name === 'Petra') || null;
+  // ── AIP-62 wallet-standard discovery (no library needed) ──────────────────
+  // Protocol:
+  //   • App fires  "wallet-standard:app-ready"  → already-loaded wallets call register(wallet)
+  //   • Wallets fire "wallet-standard:register-wallet" → app calls detail.register(addWallet)
+  function isAptosWallet(w) {
+    return w && w.features && ('aptos:connect' in w.features);
   }
 
-  function initWallets() {
-    const { aptosWallets, on } = getAptosWallets();
-    petraWallet = findPetra(aptosWallets);
-
-    // Wallet standard passes newly registered wallets as rest arguments
-    on('register', (...newWallets) => {
-      for (const w of newWallets) {
-        if (!petraWallet && w.name === 'Petra') {
-          petraWallet = w;
-        }
-      }
-    });
+  function considerWallet(w) {
+    if (isAptosWallet(w) && !petraWallet && w.name === 'Petra') {
+      petraWallet = w;
+    }
   }
 
-  // ── UI state ───────────────────────────────────────────────────────────────
+  // Listen for wallets that load after this script
+  window.addEventListener('wallet-standard:register-wallet', ({ detail }) => {
+    if (detail && typeof detail.register === 'function') {
+      detail.register(considerWallet);
+    }
+  });
+
+  // Trigger wallets already present on the page
+  window.dispatchEvent(new CustomEvent('wallet-standard:app-ready', {
+    bubbles: false, cancelable: false, composed: false,
+    detail: { register: considerWallet }
+  }));
+
+  // ── UI helpers ─────────────────────────────────────────────────────────────
   function setConnected(addr, pubKey) {
     connectedAddr   = addr;
     connectedPubKey = pubKey;
-
     document.getElementById('walletDot').classList.add('connected');
     document.getElementById('walletLabel').textContent = 'Petra Wallet connected';
-
     const addrEl = document.getElementById('walletAddress');
     addrEl.textContent = shortAddr(addr);
     addrEl.title = addr;
-
     document.getElementById('connectBtn').style.display    = 'none';
     document.getElementById('disconnectBtn').style.display = '';
-
     const signBtn = document.getElementById('signBtn');
-    signBtn.disabled     = false;
-    signBtn.textContent  = 'Sign Message';
+    signBtn.disabled    = false;
+    signBtn.textContent = 'Sign Message';
   }
 
   function setDisconnected() {
-    connectedAddr   = null;
-    connectedPubKey = null;
-
+    connectedAddr = connectedPubKey = null;
     document.getElementById('walletDot').classList.remove('connected');
-    document.getElementById('walletLabel').textContent  = 'Not connected';
+    document.getElementById('walletLabel').textContent   = 'Not connected';
     document.getElementById('walletAddress').textContent = '';
     document.getElementById('walletAddress').title       = '';
-
-    const connectBtn = document.getElementById('connectBtn');
-    connectBtn.style.display = '';
-    connectBtn.disabled      = false;
-    connectBtn.textContent   = 'Connect Petra';
-
+    const cb = document.getElementById('connectBtn');
+    cb.style.display = ''; cb.disabled = false; cb.textContent = 'Connect Petra';
     document.getElementById('disconnectBtn').style.display = 'none';
-
-    const signBtn = document.getElementById('signBtn');
-    signBtn.disabled    = true;
-    signBtn.textContent = 'Connect wallet to sign';
+    const sb = document.getElementById('signBtn');
+    sb.disabled = true; sb.textContent = 'Connect wallet to sign';
   }
 
   // ── Connect ────────────────────────────────────────────────────────────────
   async function connectWallet() {
     if (!petraWallet) {
-      showResult('signResult', 'error', '&#9888; Petra not found', [{
+      showResult('signResult', 'error', '&#9888; Petra not detected', [{
         key: 'Action',
-        val: 'Install the Petra Wallet browser extension and reload this page. Download at petra.app'
+        val: 'Install the Petra Wallet extension, reload this page, then try again. Download at petra.app'
       }]);
       return;
     }
 
     const btn = document.getElementById('connectBtn');
     btn.innerHTML = '<span class="spinner"></span> Connecting…';
-    btn.disabled  = true;
+    btn.disabled = true;
 
     try {
-      const connectFeature = petraWallet.features['aptos:connect'];
-      if (!connectFeature) throw new Error('Wallet does not support aptos:connect');
+      const connectFeat = petraWallet.features['aptos:connect'];
+      if (!connectFeat) throw new Error('Wallet missing aptos:connect feature');
 
-      const response = await connectFeature.connect();
+      await connectFeat.connect();
 
-      // Grab the first account
-      const account = petraWallet.accounts?.[0] ?? response?.accounts?.[0];
+      // Accounts are available on the wallet object after connect
+      const account = petraWallet.accounts && petraWallet.accounts[0];
       if (!account) throw new Error('No account returned after connect');
 
-      const addr   = typeof account.address === 'string' ? account.address : toHexString(account.address);
+      const addr   = toHexString(account.address);
       const pubKey = toHexString(account.publicKey);
-
       setConnected(addr, pubKey);
     } catch (err) {
       btn.textContent = 'Connect Petra';
-      btn.disabled    = false;
+      btn.disabled = false;
       showResult('signResult', 'error', '&#10007; Connection failed', [{
-        key: 'Error',
-        val: err.message || 'User rejected the request'
+        key: 'Error', val: err.message || 'User rejected the request'
       }]);
     }
   }
@@ -438,7 +414,6 @@
       }]);
       return;
     }
-
     if (!petraWallet || !connectedAddr) {
       showResult('signResult', 'error', '&#10007; Not connected', [{
         key: 'Error', val: 'Connect your Petra wallet first.'
@@ -450,20 +425,16 @@
     signBtn.disabled  = true;
 
     try {
-      const signFeature = petraWallet.features['aptos:signMessage'];
-      if (!signFeature) throw new Error('Wallet does not support aptos:signMessage');
+      const signFeat = petraWallet.features['aptos:signMessage'];
+      if (!signFeat) throw new Error('Wallet missing aptos:signMessage feature');
 
-      const response = await signFeature.signMessage({
-        message: msgVal,
-        nonce: nonceVal,
-      });
+      const resp = await signFeat.signMessage({ message: msgVal, nonce: nonceVal });
 
-      const signature   = toHexString(response.signature);
-      const fullMessage = response.fullMessage;
-      const address     = response.address   ?? connectedAddr;
-      const publicKey   = response.publicKey ? toHexString(response.publicKey) : connectedPubKey;
+      const signature   = toHexString(resp.signature);
+      const fullMessage = resp.fullMessage;
+      const address     = resp.address ? toHexString(resp.address) : connectedAddr;
+      const publicKey   = resp.publicKey ? toHexString(resp.publicKey) : connectedPubKey;
 
-      // Auto-fill verify tab
       document.getElementById('verifyFullMessage').value = fullMessage;
       document.getElementById('verifySignature').value   = signature;
       document.getElementById('verifyPublicKey').value   = publicKey;
@@ -475,7 +446,6 @@
         { key: 'Full Message', val: fullMessage },
         { key: 'Signature',    val: signature },
       ]);
-
     } catch (err) {
       showResult('signResult', 'error', '&#10007; Signing failed', [{
         key: 'Error', val: err.message || 'User rejected the signing request.'
@@ -489,10 +459,10 @@
   // ── Verify ─────────────────────────────────────────────────────────────────
   function verifyMessage() {
     const fullMessage  = document.getElementById('verifyFullMessage').value.trim();
-    const signatureHex = document.getElementById('verifySignature').value.trim();
-    const publicKeyHex = document.getElementById('verifyPublicKey').value.trim();
+    const sigHex       = document.getElementById('verifySignature').value.trim();
+    const pubHex       = document.getElementById('verifyPublicKey').value.trim();
 
-    if (!fullMessage || !signatureHex || !publicKeyHex) {
+    if (!fullMessage || !sigHex || !pubHex) {
       showResult('verifyResult', 'error', '&#10007; Missing fields', [{
         key: 'Error', val: 'Full Message, Signature, and Public Key are all required.'
       }]);
@@ -501,8 +471,8 @@
 
     try {
       const msgBytes = new TextEncoder().encode(fullMessage);
-      const sigBytes = hexToBytes(signatureHex);
-      const pubBytes = hexToBytes(publicKeyHex);
+      const sigBytes = hexToBytes(sigHex);
+      const pubBytes = hexToBytes(pubHex);
 
       if (sigBytes.length !== 64) throw new Error(`Signature must be 64 bytes (got ${sigBytes.length})`);
       if (pubBytes.length !== 32) throw new Error(`Public key must be 32 bytes (got ${pubBytes.length})`);
@@ -511,32 +481,32 @@
 
       if (!valid) {
         showResult('verifyResult', 'error', '&#10007; Invalid signature', [{
-          key: 'Result', val: 'The signature does NOT match the provided message and public key.'
+          key: 'Result', val: 'Signature does NOT match — the message may have been altered or signed by a different key.'
         }]);
         return;
       }
 
       showResult('verifyResult', 'success', '&#10003; Signature verified', [
-        { key: 'Result',     val: 'Valid Ed25519 signature — the message was signed by the owner of this public key.' },
-        { key: 'Public Key', val: publicKeyHex },
+        { key: 'Result',     val: 'Valid Ed25519 signature — signed by the owner of this public key.' },
+        { key: 'Public Key', val: pubHex },
       ]);
-
     } catch (err) {
       showResult('verifyResult', 'error', '&#10007; Verification error', [{
-        key: 'Error', val: err.message || 'Check that all fields are correct hex values.'
+        key: 'Error', val: err.message || 'Check that all fields are valid hex values.'
       }]);
     }
   }
 
-  // ── Tab switching ──────────────────────────────────────────────────────────
+  // ── Tabs ───────────────────────────────────────────────────────────────────
   function switchTab(name) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    document.getElementById('tab' + name[0].toUpperCase() + name.slice(1)).classList.add('active');
+    const capName = name[0].toUpperCase() + name.slice(1);
+    document.getElementById('tab' + capName).classList.add('active');
     document.getElementById('panel-' + name).classList.add('active');
   }
 
-  // ── Wire up events ─────────────────────────────────────────────────────────
+  // ── Wire up ────────────────────────────────────────────────────────────────
   document.getElementById('connectBtn').addEventListener('click', connectWallet);
   document.getElementById('disconnectBtn').addEventListener('click', disconnectWallet);
   document.getElementById('signBtn').addEventListener('click', signMessage);
@@ -546,14 +516,6 @@
   document.getElementById('walletAddress').addEventListener('click', () => {
     if (connectedAddr) copyText(connectedAddr);
   });
-
-  // ── Init ───────────────────────────────────────────────────────────────────
-  initWallets();
-
-  // Re-enable the connect button now that the library and event listeners
-  // are fully set up.
-  document.getElementById('connectBtn').textContent = 'Connect Petra';
-  document.getElementById('connectBtn').disabled = false;
 </script>
 </body>
 </html>
